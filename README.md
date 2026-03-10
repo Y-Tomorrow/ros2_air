@@ -178,7 +178,7 @@ start.sh里执行了
 下载一个Gazebo的启动脚本
 
     我的版本：
-
+    wget https://github.com/Y-Tomorrow/ros2_air/blob/main/simulation-gazebo.py
     原版：
     wget https://raw.githubusercontent.com/PX4/PX4-gazebo-models/main/simulation-gazebo
 
@@ -253,4 +253,5 @@ start.sh里执行了
 ---
 **参考来源：**  
 https://blog.csdn.net/m0_70327996/article/details/147143081
+
 https://zhuanlan.zhihu.com/p/1904187016243045984
