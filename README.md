@@ -178,7 +178,7 @@ start.sh里执行了
 下载一个Gazebo的启动脚本
 
     我的版本：
-    wget https://github.com/Y-Tomorrow/ros2_air/blob/main/simulation-gazebo.py
+    wget https://raw.githubusercontent.com/Y-Tomorrow/ros2_air/main/simulation-gazebo.py    
     原版：
     wget https://raw.githubusercontent.com/PX4/PX4-gazebo-models/main/simulation-gazebo
 
@@ -241,6 +241,13 @@ start.sh里执行了
 
 复制~/.simulation-gazebo/models/OakD-Lite到/PX4-Autopilot/Tools/simulation/gz/models
 
+在~/PX4-Autopilot/Tools/simulation/gz/models/OakD-Lite/model.sdf中的IMX214相机中加入图像话题
+
+    <always_on>1</always_on>
+    <update_rate>30</update_rate>
+    <visualize>true</visualize>
+    <topic>image_raw</topic>
+
 启动带深度相机无人机（目录/PX4-Autopilot/Tools/simulation/gz/models/x500_dept）
 
     export PX4_GZ_STANDALONE=1
@@ -250,8 +257,39 @@ start.sh里执行了
     # 启动 (注意 -i 1)
     PX4_SYS_AUTOSTART=4001 ~/PX4-Autopilot/build/px4_sitl_default/bin/px4 -i 1
 
+
+安装ros-humble-ros-gzgarden将ROS2与Gazebo进行桥接
+
+    sudo wget https://packages.osrfoundation.org/gazebo.gpg -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install gz-garden
+    sudo apt-get install ros-humble-ros-gzgarden
+
+    # 检查
+    ros2 pkg list | grep ros_gz
+    # 看到
+    ros_gz
+    ros_gz_bridge
+    ros_gz_image
+    ros_gz_interfaces
+    ros_gz_sim
+    ros_gz_sim_demos
+    就说明安装好了
+
+桥接
+
+    # 1. 确保环境变量正确
+    export GZ_VERSION=garden
+
+    # 2. 执行桥接
+    ros2 run ros_gz_bridge parameter_bridge "/image_raw@sensor_msgs/msg/Image[gz.msgs.Image"
+
+
 ---
 **参考来源：**  
 https://blog.csdn.net/m0_70327996/article/details/147143081
 
 https://zhuanlan.zhihu.com/p/1904187016243045984
+
+https://zhuanlan.zhihu.com/p/644405465
