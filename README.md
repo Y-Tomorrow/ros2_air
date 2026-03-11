@@ -323,8 +323,10 @@ source ~/ros2_air/install/setup.bash
 ros2 run drone_detector drone_detector_node
 ```
 
-
-
+# 无人机追踪
+```bash
+ros2 launch drone_tracker drone_tracker.launch.py vehicle_id:=2
+```
 ---
 **参考来源：**  
 https://blog.csdn.net/m0_70327996/article/details/147143081
