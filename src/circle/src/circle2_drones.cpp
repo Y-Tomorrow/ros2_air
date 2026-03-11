@@ -169,7 +169,7 @@ void DualCircleControl::publish_trajectory_setpoint(int drone_id)
         x = center_x + radius * std::cos(omega * t);
         y = center_y + radius * std::sin(omega * t);
         z = -5.0; // altitude
-        yaw = omega * t + M_PI/2; // [-PI:PI]
+        // yaw = omega * t + M_PI/2; // [-PI:PI]
     }
 
     msg.position = {

@@ -1,0 +1,3 @@
+#!/bin/bash
+# 使用当前 PATH 中的 python3 运行节点（conda 激活时即为 conda 环境），避免 colcon 生成的 shebang 指向系统 Python
+exec python3 -m drone_detector.drone_detector_node "$@"
