@@ -15,5 +15,17 @@ gnome-terminal --window --title="QGC" -- bash -c "cd $PX4_DIR && ./QGroundContro
 
 # 3. 启动 PX4 SITL & Gazebo
 # gnome-terminal --window --title="PX4" -- bash -c "cd $PX4_DIR && make px4_sitl gz_x500; exec bash"
+gnome-terminal --window --title="GAZEBO" -- bash -c "cd $PX4_DIR && ./simulation-gazebo.py --source px4; exec bash"
+
+# 4. 加入带相机无人机
+gnome-terminal --window --title="无人机2" -- bash -c "export PX4_GZ_STANDALONE=1;
+export PX4_GZ_MODEL=x500_depth;
+export PX4_GZ_MODEL_POSE="0,2,0,0,0,0";
+PX4_SYS_AUTOSTART=4001 ~/PX4-Autopilot/build/px4_sitl_default/bin/px4 -i 1;exec bash"
+
+# 5. 桥接
+gnome-terminal --window --title="无人机2" -- bash -c "export GZ_VERSION=garden;
+ros2 run ros_gz_bridge parameter_bridge "/image_raw@sensor_msgs/msg/Image[gz.msgs.Image";"
+
 
 echo "完成。请检查新开启的窗口。"
