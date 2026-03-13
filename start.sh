@@ -24,8 +24,13 @@ export PX4_GZ_MODEL_POSE="0,2,0,0,0,0";
 PX4_SYS_AUTOSTART=4001 ~/PX4-Autopilot/build/px4_sitl_default/bin/px4 -i 1;exec bash"
 
 # 5. 桥接
-gnome-terminal --window --title="无人机2" -- bash -c "export GZ_VERSION=garden;
+gnome-terminal --window --title="桥接" -- bash -c "export GZ_VERSION=garden;
 ros2 run ros_gz_bridge parameter_bridge "/image_raw@sensor_msgs/msg/Image[gz.msgs.Image";"
 
+# 6. 控制第一辆无人机
+gnome-terminal --window --title="无人机1" -- bash -c "
+source /opt/ros/humble/setup.bash;
+source ~/ros2_air/install/setup.bash;
+ros2 run circle circle1; exec bash"
 
 echo "完成。请检查新开启的窗口。"

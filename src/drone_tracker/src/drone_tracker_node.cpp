@@ -198,7 +198,7 @@ private:
     const double age_s = (now - last_det_time_).nanoseconds() * 1e-9;
     const float dt = static_cast<float>(control_period_ms_) / 1000.0f;
 
-    // 关键需求：一旦识别到目标（本周期收到新检测），立刻停止旋转并进入跟随
+    // 一旦识别到目标，立刻停止旋转并进入跟随
     const bool fresh = det_fresh_.exchange(false, std::memory_order_relaxed);
     const bool tracking = fresh || (age_s < lost_timeout_s_);
 
