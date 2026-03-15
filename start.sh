@@ -31,6 +31,6 @@ ros2 run ros_gz_bridge parameter_bridge "/image_raw@sensor_msgs/msg/Image[gz.msg
 gnome-terminal --window --title="无人机1" -- bash -c "
 source /opt/ros/humble/setup.bash;
 source ~/ros2_air/install/setup.bash;
-ros2 run circle circle1; exec bash"
+ros2 run offboard_control circle1; exec bash"
 
 echo "完成。请检查新开启的窗口。"

@@ -128,32 +128,33 @@ ros2 run px4_ros_com offboard_control
 cd ~/ros2_ws/src
 ros2 pkg create --build-type ament_cmake your_bagname  
 ```    
-（your_bagname替换为你想创建的功能包，比如你想跑圆形轨迹可以命名为circle）
+（your_bagname替换为你想创建的功能包，例如 offboard_control）
 
 2、编写轨迹代码，保存到~/ros2_ws/src/your_bagname/src/your_codename.cpp，这里提供一段圆形轨迹代码供参考，轨迹代码名字为circle1.cpp，每次编写完记得保存
 
-    src/circle/src/circle1.cpp
+    src/offboard_control/src/circle1.cpp
 
 3、编写cmakelists.txt文件
 
 cmakelist文件是在创建好的功能包里面的，双击打开，复制下面内容将其替换掉，然后保存
 
-    src/circle/CMakeLists.txt
+    src/offboard_control/CMakeLists.txt
 
 4、编译
 ```bash
     cd ~/ros2_ws
     colcon build --packages-select your_bagname
 ```
-（如果是上面的圆形轨迹案例记得把这里的your_bagname改为circle）
+（如果是上面的圆形轨迹案例记得把这里的your_bagname改为offboard_control）
 
 5、运行
 ```bash
     source install/setup.bash
     ros2 run your_bagname your_codename
-    ros2 run circle circle1
+    ros2 run offboard_control circle1
 ```    
-（如果是上面的圆形轨迹案例记得把这里的your_bagname改为circle，your_codename改为circle1）
+
+start.sh脚本
 ```bash
     chmod +x start.sh
     ./start.sh
@@ -166,7 +167,7 @@ start.sh里执行了
 
 启动qgc地面站：./QGroundControl.AppImage  
 
-
+启动gazebo环境和加入第一辆无人机
 
 # 多机
 指定gazebo
@@ -215,9 +216,9 @@ PX4_SYS_AUTOSTART=4001 ~/PX4-Autopilot/build/px4_sitl_default/bin/px4 -i 1
 同时控制两辆无人机
 ```bash
 cd ~/ros2_air
-colcon build --packages-select circle
+colcon build --packages-select offboard_control
 source install/setup.bash
-ros2 run circle circle2_drones
+ros2 run offboard_control circle2_drones
 ```
 # 带相机的无人机
 
