@@ -28,9 +28,9 @@ gnome-terminal --window --title="桥接" -- bash -c "export GZ_VERSION=garden;
 ros2 run ros_gz_bridge parameter_bridge "/image_raw@sensor_msgs/msg/Image[gz.msgs.Image";"
 
 # 6. 控制第一辆无人机
-gnome-terminal --window --title="无人机1" -- bash -c "
-source /opt/ros/humble/setup.bash;
-source ~/ros2_air/install/setup.bash;
-ros2 run offboard_control circle1; exec bash"
+# gnome-terminal --window --title="无人机1" -- bash -c "
+# source /opt/ros/humble/setup.bash;
+# source ~/ros2_air/install/setup.bash;
+# ros2 run offboard_control circle1; exec bash"
 
 echo "完成。请检查新开启的窗口。"

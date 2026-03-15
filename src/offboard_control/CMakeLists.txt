@@ -35,8 +35,21 @@ install(TARGETS circle1 DESTINATION lib/${PROJECT_NAME})
 add_executable(circle2_drones src/circle2_drones.cpp)
 ament_target_dependencies(circle2_drones rclcpp px4_msgs)
 install(TARGETS circle2_drones DESTINATION lib/${PROJECT_NAME})
- 
+
+# Add attitude_control executable (pure attitude setpoint via /fmu/in/vehicle_attitude_setpoint)
+add_executable(attitude_control src/attitude_control.cpp)
+ament_target_dependencies(attitude_control rclcpp px4_msgs)
+install(TARGETS attitude_control DESTINATION lib/${PROJECT_NAME})
+
+# Add attitude_control_keyboard (keyboard-tunable attitude/thrust, run in terminal with stdin)
+add_executable(attitude_control_keyboard src/attitude_control_keyboard.cpp)
+ament_target_dependencies(attitude_control_keyboard rclcpp px4_msgs)
+install(TARGETS attitude_control_keyboard DESTINATION lib/${PROJECT_NAME})
+
+# Install launch files
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+
 # Export information to downstream packages
 ament_export_dependencies(ament_cmake rclcpp rosidl_default_runtime eigen3_cmake_module Eigen3 px4_msgs geometry_msgs sensor_msgs)
- 
+
 ament_package()

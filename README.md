@@ -329,6 +329,13 @@ ros2 run drone_detector drone_detector_node
 ```bash
 ros2 launch drone_tracker drone_tracker.launch.py vehicle_id:=2
 ```
+
+# 姿态控制
+```bash
+ros2 launch offboard_control attitude_control.launch.py
+ros2 run offboard_control attitude_control_keyboard
+```
+
 ---
 **参考来源：**  
 https://blog.csdn.net/m0_70327996/article/details/147143081
