@@ -1,6 +1,7 @@
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
+#include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <cmath>
 #include <cstdint>
@@ -21,6 +22,7 @@ using namespace std::chrono_literals;
 using px4_msgs::msg::OffboardControlMode;
 using px4_msgs::msg::VehicleAttitudeSetpoint;
 using px4_msgs::msg::VehicleCommand;
+using px4_msgs::msg::VehicleLocalPosition;
 
 /** 欧拉角 (roll,pitch,yaw) 转四元数 [qw,qx,qy,qz]，NED 到 body，ZYX 顺序。并归一化。 */
 static void euler_to_quat(float roll, float pitch, float yaw,
@@ -45,6 +47,14 @@ static constexpr float STEP_THRUST_FINE   = 0.0002f;   // 推力微调
 static constexpr float STEP_THRUST_COARSE = 0.002f;    // 推力粗调
 static constexpr float STEP_ANGLE_FINE    = 0.2f;      // 姿态角微调（度）
 static constexpr float STEP_ANGLE_COARSE  = 1.0f;      // 姿态角粗调（度）
+
+// 简单定高控制参数（在本节点内部代替 px4ctrl 做一个高度环）
+static constexpr float ALT_STEP_FINE      = 0.1f;      // 高度微调（米）
+static constexpr float ALT_STEP_COARSE    = 0.5f;      // 高度粗调（米）
+static constexpr float ALT_KP             = 0.4f;      // 高度 P 增益
+static constexpr float ALT_KD             = 0.1f;      // 高度 D 增益（对 z 轴速度）
+static constexpr float ALT_KI             = 0.05f;     // 高度 I 增益（对 z 轴误差积分，建议很小）
+static constexpr float ALT_I_LIMIT        = 0.4f;      // 积分项限幅（对应推力修正量上限）
 
 class AttitudeControlKeyboardNode : public rclcpp::Node
 {
@@ -76,6 +86,18 @@ public:
       px4_prefix_ + "/fmu/in/vehicle_attitude_setpoint", 10);
     pub_cmd_ = this->create_publisher<VehicleCommand>(
       px4_prefix_ + "/fmu/in/vehicle_command", 10);
+
+    // 订阅 PX4 本身估计的本地位置，用于简单定高控制（z 为 NED 下轴，向下为正）
+    sub_local_pos_ = this->create_subscription<VehicleLocalPosition>(
+      px4_prefix_ + "/fmu/out/vehicle_local_position",
+      rclcpp::SensorDataQoS().best_effort(),   // 匹配 PX4 默认 QoS，避免 QoS 不兼容
+      [this](const VehicleLocalPosition::SharedPtr msg)
+      {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        alt_z_ = msg->z;
+        alt_vz_ = msg->vz;
+        have_alt_.store(true, std::memory_order_relaxed);
+      });
 
     offboard_counter_ = 0;
 
@@ -109,18 +131,27 @@ private:
       "\n  [键盘] 推力: W/S 微调(%.4f)  U/J 粗调(%.3f)\n"
       "        roll:  E/D 微调(%.1f°)  C/V 粗调(%.1f°)\n"
       "        pitch: R/F 微调(%.1f°)  B/N 粗调(%.1f°)\n"
-      "        yaw:   T/G 微调(%.1f°)  Y/H 粗调(%.1f°)   Q 退出\n",
+      "        yaw:   T/G 微调(%.1f°)  Y/H 粗调(%.1f°)\n"
+      "        高度: X 开关定高模式  I/K 微调(%.1fm)  O/L 粗调(%.1fm)\n"
+      "        Q 退出\n",
       STEP_THRUST_FINE, STEP_THRUST_COARSE,
       STEP_ANGLE_FINE, STEP_ANGLE_COARSE,
       STEP_ANGLE_FINE, STEP_ANGLE_COARSE,
-      STEP_ANGLE_FINE, STEP_ANGLE_COARSE);
+      STEP_ANGLE_FINE, STEP_ANGLE_COARSE,
+      ALT_STEP_FINE, ALT_STEP_COARSE);
   }
 
   void printParams()
   {
     std::lock_guard<std::mutex> lock(params_mutex_);
-    printf("\r  hover_thrust=%.4f  roll=%.2f  pitch=%.2f  yaw=%.2f (deg)   ",
-      hover_thrust_, roll_deg_, pitch_deg_, yaw_deg_);
+    const char *mode_str = altitude_hold_enabled_ ? "ALT_HOLD" : "MANUAL  ";
+    printf("\033[A\r  mode=%s  thrust_cmd=%.4f  hover_thrust=%.4f"
+           "  roll=%.2f  pitch=%.2f  yaw=%.2f (deg)"
+           "  z=%.2f  z_sp=%.2f   ",
+      mode_str,
+      last_thrust_cmd_, hover_thrust_,
+      roll_deg_, pitch_deg_, yaw_deg_,
+      alt_z_, alt_sp_);
     fflush(stdout);
   }
 
@@ -170,11 +201,59 @@ private:
           case 'g': case 'G': yaw_deg_ -= STEP_ANGLE_FINE; updated = true; break;
           case 'y': case 'Y': yaw_deg_ += STEP_ANGLE_COARSE; updated = true; break;
           case 'h': case 'H': yaw_deg_ -= STEP_ANGLE_COARSE; updated = true; break;
+          // 一键定高模式开关与目标高度调节（基于 PX4 VehicleLocalPosition.z，向下为正）
+          case 'x': case 'X':
+            if (!altitude_hold_enabled_) {
+              if (have_alt_.load(std::memory_order_relaxed)) {
+                altitude_hold_enabled_ = true;
+                alt_sp_ = alt_z_;
+                alt_i_ = 0.0f;
+                updated = true;
+                RCLCPP_INFO(this->get_logger(),
+                  "Altitude hold ENABLED, lock current z=%.2f m (NED down), use I/K O/L 调高度",
+                  alt_z_);
+              } else {
+                RCLCPP_WARN(this->get_logger(),
+                  "Altitude hold: no VehicleLocalPosition yet, cannot enable.");
+              }
+            } else {
+              altitude_hold_enabled_ = false;
+              alt_i_ = 0.0f;
+              updated = true;
+              RCLCPP_INFO(this->get_logger(), "Altitude hold DISABLED, back to manual thrust.");
+            }
+            break;
+          case 'i': case 'I':
+            if (altitude_hold_enabled_ && have_alt_.load(std::memory_order_relaxed)) {
+              alt_sp_ -= ALT_STEP_FINE;   // 减小 z => 上升
+              updated = true;
+            }
+            break;
+          case 'k': case 'K':
+            if (altitude_hold_enabled_ && have_alt_.load(std::memory_order_relaxed)) {
+              alt_sp_ += ALT_STEP_FINE;   // 增大 z => 下降
+              updated = true;
+            }
+            break;
+          case 'o': case 'O':
+            if (altitude_hold_enabled_ && have_alt_.load(std::memory_order_relaxed)) {
+              alt_sp_ -= ALT_STEP_COARSE;
+              updated = true;
+            }
+            break;
+          case 'l': case 'L':
+            if (altitude_hold_enabled_ && have_alt_.load(std::memory_order_relaxed)) {
+              alt_sp_ += ALT_STEP_COARSE;
+              updated = true;
+            }
+            break;
           case 'q': case 'Q': quit_.store(true); rclcpp::shutdown(); break;
           default: break;
         }
       }
-      if (updated) printParams();
+      if (updated) {
+        printParams();   // 仅在有按键导致参数/模式变化时刷新一行状态
+      }
     }
   }
 
@@ -213,13 +292,43 @@ private:
     }
     if (offboard_counter_ < 11) offboard_counter_++;
 
-    float roll_rad, pitch_rad, yaw_rad, thrust;
+    float roll_rad, pitch_rad, yaw_rad;
+    float thrust;
+    bool alt_hold = false;
+    float z = 0.0f, vz = 0.0f, z_sp = 0.0f;
     {
       std::lock_guard<std::mutex> lock(params_mutex_);
       roll_rad = roll_deg_ * static_cast<float>(M_PI / 180.0);
       pitch_rad = pitch_deg_ * static_cast<float>(M_PI / 180.0);
       yaw_rad = yaw_deg_ * static_cast<float>(M_PI / 180.0);
       thrust = hover_thrust_;
+      alt_hold = altitude_hold_enabled_;
+      z = alt_z_;
+      vz = alt_vz_;
+      z_sp = alt_sp_;
+    }
+
+    // 简单定高：使用 PX4 的 VehicleLocalPosition.z / vz 做一个 PID 高度环（带积分限幅），调节 thrust
+    if (alt_hold && have_alt_.load(std::memory_order_relaxed)) {
+      const float err = z - z_sp;   // NED 下轴：z 大说明更“低”，需要更大推力
+      const float dt = std::max(1e-3f, static_cast<float>(control_period_ms_) / 1000.0f);
+
+      float i_term = 0.0f;
+      {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        alt_i_ = std::clamp(alt_i_ + err * dt, -ALT_I_LIMIT / std::max(1e-6f, ALT_KI), ALT_I_LIMIT / std::max(1e-6f, ALT_KI));
+        i_term = ALT_KI * alt_i_;
+      }
+
+      const float u = ALT_KP * err + ALT_KD * vz + i_term;
+      const float thrust_unsat = thrust + u;
+      thrust = std::clamp(thrust_unsat, 0.0f, 1.0f);
+
+      // 简单 anti-windup：如果推力饱和且误差还在推动更饱和方向，就回退本次积分
+      if ((thrust != thrust_unsat) && ((thrust == 1.0f && err > 0.0f) || (thrust == 0.0f && err < 0.0f))) {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        alt_i_ = std::clamp(alt_i_ - err * dt, -ALT_I_LIMIT / std::max(1e-6f, ALT_KI), ALT_I_LIMIT / std::max(1e-6f, ALT_KI));
+      }
     }
 
     float qw, qx, qy, qz;
@@ -241,12 +350,20 @@ private:
     sp.reset_integral = false;
     sp.fw_control_yaw_wheel = false;
     pub_attitude_->publish(sp);
+
+    {
+      std::lock_guard<std::mutex> lock(params_mutex_);
+      last_thrust_cmd_ = thrust;
+    }
   }
 
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<OffboardControlMode>::SharedPtr pub_offboard_;
   rclcpp::Publisher<VehicleAttitudeSetpoint>::SharedPtr pub_attitude_;
   rclcpp::Publisher<VehicleCommand>::SharedPtr pub_cmd_;
+
+  // PX4 本地位置订阅（用于定高控制，z/vz）
+  rclcpp::Subscription<VehicleLocalPosition>::SharedPtr sub_local_pos_;
 
   int vehicle_id_{1};
   std::string px4_prefix_;
@@ -257,6 +374,15 @@ private:
   float yaw_deg_{0.0f};
   int control_period_ms_{20};
   uint64_t offboard_counter_{0};
+
+  // 简单定高控制相关状态
+  bool altitude_hold_enabled_{false};
+  float alt_z_{0.0f};     // 当前 z（NED，下为正）
+  float alt_vz_{0.0f};    // 当前 z 方向速度
+  float alt_sp_{0.0f};    // 目标 z（与 VehicleLocalPosition.z 同符号）
+  std::atomic<bool> have_alt_{false};
+  float alt_i_{0.0f};     // 高度误差积分状态（内部状态）
+  float last_thrust_cmd_{0.0f};  // 上一次发送的推力（便于终端显示）
 
   std::thread keyboard_thread_;
   std::atomic<bool> quit_{false};
